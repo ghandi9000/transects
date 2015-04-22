@@ -1,0 +1,207 @@
+---
+title: "Transect Interactive Graphics"
+date: "Generated: `r Sys.Date()`"
+runtime: shiny
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    highlight: zenburn
+    number_sections: false
+
+---
+
+```{r global_opts, include=FALSE}
+knitr::opts_chunk$set(fig.path="./Figs", echo=FALSE, warning=FALSE, 
+                      message=FALSE, dev='svg')
+```
+```{r styling}
+selectInput("style", "Page Styling (not working):", 
+            choices=c("darkly", "cyborg", "cosmo", "cerulean", 
+                      "flatly", "journal", "slate", "superhero",
+                      "spacelab", "readable", "sandstone"))
+stylesheet <- reactive({
+  paste0("../www/", input$style, "min.css")
+})
+```
+
+# Info
+* [code](https://github.com/ghandi9000/transects)
+
+```{r setup, cache=FALSE}
+source("setup.R")
+source("helpers.R")
+
+observe({
+  input$tabs1
+  if (input$tabs1 == "Scatter 3D")
+    updateCheckboxInput(session, "allPlots", label = "All Plots", value=TRUE)
+})
+
+observe({
+  input$tran
+  hh <- ifelse(input$tabs1 == "Position", TRUE, FALSE)
+  inds <- tp$TRAN == input$tran
+  if (input$tabs1 == "Position")
+    inds <- inds & tp$ELEVCL == "HH"
+  updateSelectInput(session, "plot", "Plot:",
+                    choices=sort(unique(tp[inds, "TPLOT"])))
+  })
+
+getData <- reactive({
+  if (input$allPlots == TRUE) {
+    tp[tp$TRAN == as.character(input$tran), ]
+  } else
+    tp[tp$TRAN == as.character(input$tran) &
+         tp$TPLOT == as.numeric(input$plot), ]
+})
+
+scatter <- renderPlot({
+  data <- getData()
+  color <- ifelse(input$color, input$colorBy, "NULL")
+  shape <- ifelse(input$shape, input$shapeBy, "NULL")
+  size <- ifelse(input$size, input$sizeBy, "NULL")
+  p1 <- ggplot(data, aes_string(input$xVar, input$yVar, 
+                                color=color, size=size, shape=shape))
+  p1 <- p1 + geom_point(alpha=0.5, na.rm=T) +
+    ggtitle(paste0("Transect: ", input$tran, ", ", input$yVar, " vs ", 
+                   input$xVar, "\nPlots:",
+                   paste(sort(unique(data$TPLOT)), collapse=",")))
+  if (input$split)
+    p1 <- p1 + facet_wrap(as.formula(paste("~", input$splitBy)))
+  
+  if (input$smooth)
+    p1 <- p1 + geom_smooth(method = input$splineType, 
+                           level = as.numeric(input$conf), na.rm=T)
+  print(p1)
+})
+
+scatter3d <- renderPlot({
+  require(lattice)
+  require(rgl)
+  require(RColorBrewer)
+  data <- getData()
+  
+  if (input$package3d == "lattice") {
+    form <- paste0(input$zVar3d, "~", input$xVar3d, "*", input$yVar3d)
+    if (input$split3d)
+      form <- paste0(form, "|", input$split3dBy)
+    cloud(as.formula(form), data=data)
+    } else if (input$package3d == "rgl") {
+      pal <- brewer.pal(length(unique(data$SPEC)), "Greens")
+      data$col <- pal[as.numeric(data$SPEC)]
+      plot3d(data[,input$xVar3d], data[,input$yVar3d], data[,input$zVar3d],
+             xlab=input$xVar3d, ylab=input$yVar3d, zlab=input$zVar3d,
+             type="s", alpha=0.5, col=data$col)
+      title3d(main=paste0("Transect: ", input$tran, ", Plot(s): ",
+                          paste(sort(unique(data$TPLOT)), collapse=",")),
+              pch=2)
+      axes3d()
+      legend3d()
+    }
+})
+
+position <- renderPlot({
+  require(plotrix)
+  data <- getData()
+  data <- data[!is.na(data$HR) & !is.na(data$DIST),]
+  polar.plot(data$DIST, polar.pos=(data$HR%%12)/max(data$HR) * 360, 
+             start=90, clockwise=T, line.col="red",
+             main=paste0("Transect (HH): ", input$tran, ", Plot: ", 
+                         paste(sort(unique(data$TPLOT)), collapse=",")))
+})
+
+shinyUI(fluidPage(
+  includeCSS("../www/slate.min.css"),
+  headerPanel("Exploratory Graphics"),
+  sidebarPanel(
+      selectInput("tran", "Transect:", 
+                  choices=sort(unique(as.character(tp$TRAN)))),
+      selectInput("plot", "Plot:", choices=sort(unique(tp$TPLOT))),
+      checkboxInput("allPlots", "All Plots"),
+
+      ## Scatter plot specific
+      conditionalPanel(
+        condition = "input.tabs1 == 'Scatter'",
+        selectInput("xVar", "X:", choices=c("DBH", "BA", "BV", "HT", "HTOBS")),
+        selectInput("yVar", "Y:", choices=c("HT", "HTOBS", "DBH", "BA", "BV")),
+        checkboxInput("color", "Color"),
+        checkboxInput("size", "Size"),
+        checkboxInput("shape", "Shape"),
+        checkboxInput("split", "Split Graphs"),
+        checkboxInput("smooth", "Add Spline"),
+        
+        conditionalPanel(
+          condition = "input.split == true",
+          selectInput("splitBy", "Split:", 
+                      choices=c("YEAR", "ELEVCL", "ASPCL", "SPEC"))
+          ),
+        conditionalPanel(
+          condition = "input.color == true",
+          selectInput("colorBy", "Color:", 
+                      choices=c("YEAR", "SPEC", "STAT"))
+          ),
+        conditionalPanel(
+          condition = "input.size == true",
+          selectInput("sizeBy", "Size:", 
+                      choices=c("DBH", "BA", "BV", "HT"))
+          ),
+        conditionalPanel(
+          condition = "input.shape == true",
+          selectInput("shapeBy", "Shape:",
+                      choices=c("SPEC", "ASPCL", "ELEVCL", "STAT"))
+          ),
+        conditionalPanel(
+          helpText("lm = linear model\nglm = generalized linear model (normal)"),
+          condition = "input.smooth == true",
+          selectInput("splineType", "Spline Method:",
+                      choices=c("loess", "lm", "glm")),
+          sliderInput("conf", "Confidence Level:", min=0, max=1, value=0.95)
+          )
+        ),
+      
+      ## 3D scatter
+      conditionalPanel(
+        condition = "input.tabs1 == 'Scatter 3D'",
+        helpText("NOTE: Use 'All Plots' whne using variables like 'ELEV'"),
+        selectInput("package3d", "Graphics Framework",
+                    choices=c("lattice", "rgl")),
+        selectInput("zVar3d", "Z:",
+                    choices=c("HT", "HTOBS", "BV", "BA", "DBH")),
+        selectInput("yVar3d", "Y:",
+                    choices=c("ELEV", "HT", "HTOBS", "BV", "BA", "DBH")),
+        selectInput("xVar3d", "X:",
+                    choices=c("BA", "HT", "HTOBS", "BV", "ELEV", "DBH")),
+        checkboxInput("split3d", "Split"),
+        conditionalPanel(
+          condition = "input.split3d == true",
+          selectInput("split3dBy", "Split By:",
+                      choices=c("ELEVCL", "ASPCL", "SPEC"))
+          )
+        ),
+      
+      ## Position
+      conditionalPanel(
+        helpText("NOTE: We only have position data for high high (HH) plots."),
+        condition = "input.tabs1 == 'Position'",
+        checkboxInput("posPoints", "Points")
+        )
+    ),
+  
+  mainPanel(
+    tabsetPanel(
+      id = "tabs1",
+      tabPanel("Position", position),
+      tabPanel("Scatter", scatter),
+      tabPanel("Scatter 3D", scatter3d)
+        )
+    
+#       renderPlot({ 
+#           ggplot(tp[tp$TRAN==input$tran & tp$TPLOT==input$plot,], 
+#                  aes(DBH, HT)) +
+#             geom_point(alpha=0.5)
+#         })
+    )
+  ))
+
+```
