@@ -196,11 +196,6 @@ shinyUI(fluidPage(
       tabPanel("Scatter 3D", scatter3d)
         )
     
-#       renderPlot({ 
-#           ggplot(tp[tp$TRAN==input$tran & tp$TPLOT==input$plot,], 
-#                  aes(DBH, HT)) +
-#             geom_point(alpha=0.5)
-#         })
     )
   ))
 
