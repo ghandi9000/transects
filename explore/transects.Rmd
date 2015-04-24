@@ -61,11 +61,25 @@ scatter <- renderPlot({
   color <- ifelse(input$color, input$colorBy, "NULL")
   shape <- ifelse(input$shape, input$shapeBy, "NULL")
   size <- ifelse(input$size, input$sizeBy, "NULL")
-  p1 <- ggplot(data, aes_string(input$xVar, input$yVar, 
-                                color=color, size=size, shape=shape))
+  x <- input$xVar
+  y <- input$yVar
+  if (input$scale) {
+    if (input$center)
+      data[,c(x, y)] <- scale(data[,c(x, y)])
+    else
+      data[,c(x, y)] <- scale(data[,c(x, y)], center = FALSE)
+  }
+  
+  if (input$kmeans) {
+    k <- as.numeric(input$numK)
+    cl <- kmeans(na.omit(data[,c(x, y)]), centers = k)
+    data[!is.na(data[,x]) & !is.na(data[,y]), "cluster"] = factor(cl$cluster)
+    color = "cluster"
+  }
+  
+  p1 <- ggplot(data, aes_string(x, y, color=color, size=size, shape=shape))
   p1 <- p1 + geom_point(alpha=0.5, na.rm=T) +
-    ggtitle(paste0("Transect: ", input$tran, ", ", input$yVar, " vs ", 
-                   input$xVar, "\nPlots:",
+    ggtitle(paste0("Transect: ", input$tran, ", ", y, " vs ", x, "\nPlots:",
                    paste(sort(unique(data$TPLOT)), collapse=",")))
   if (input$split)
     p1 <- p1 + facet_wrap(as.formula(paste("~", input$splitBy)))
@@ -103,13 +117,52 @@ scatter3d <- renderPlot({
 
 position <- renderPlot({
   require(plotrix)
+  color <- ifelse(input$colorPoints, input$colorPointsBy, "NULL")
+  shape <- ifelse(input$shapePoints, input$shapePointsBy, "NULL")
+  size <- ifelse(input$sizePoints, input$sizePointsBy, "NULL")
   data <- getData()
   data <- data[!is.na(data$HR) & !is.na(data$DIST),]
-  polar.plot(data$DIST, polar.pos=(data$HR%%12)/max(data$HR) * 360, 
-             start=90, clockwise=T, line.col="red",
-             main=paste0("Transect (HH): ", input$tran, ", Plot: ", 
-                         paste(sort(unique(data$TPLOT)), collapse=",")))
-})
+  
+  if (input$kmeansPos) {
+    k <- as.numeric(input$kPos)
+    vars <- input$kmeansVars
+    if (input$scalePos)
+      data[,vars] <- scale(data[,vars])
+    cl <- kmeans(na.omit(data[,vars]), centers = k)
+    data[complete.cases(data[,vars]), "cluster"] = factor(cl$cluster)
+    color = "cluster"
+  }
+  
+  if (input$cartesian) {
+    p1 <- ggplot(data, aes_string("X", "Y", color=color, shape=shape, 
+                                  size=size))
+    if (input$jitter)
+      p1 <- p1 + geom_jitter(position = position_jitter(width=0.1, height=0.1),
+                             alpha=0.5)
+    else
+      p1 <- p1 + geom_point(alpha=0.5)
+    
+    if (input$pointsByYear)
+      p1 <- p1 + facet_wrap(~YEAR)
+    
+    if (input$addTRAD & !input$allPlots) {
+      rs <- data %>% group_by(YEAR) %>% summarise(TRAD=unique(TRAD))
+      ps <- circ(rs[["TRAD"]], rs[["YEAR"]])
+      p1 <- p1 + geom_path(data=ps, aes(X, Y, color=YEAR, lty=YEAR))
+    }
+    if (input$addABSRAD & !input$allPlots) {
+      rs <- data %>% group_by(YEAR) %>% summarise(ABSRAD=unique(ABSRAD))
+      ps <- circ(rs[["ABSRAD"]], rs[["YEAR"]])
+      p1 <- p1 + geom_path(data=ps, aes(X, Y, color=YEAR, lty=YEAR))
+    }
+    print (p1)
+  } else {
+    polar.plot(data$DIST, polar.pos=(data$HR%%12)/max(data$HR) * 360, 
+               start=90, clockwise=T, line.col="red",
+               main=paste0("Transect (HH): ", input$tran, ", Plot: ", 
+                           paste(sort(unique(data$TPLOT)), collapse=",")))
+    }
+  })
 
 shinyUI(fluidPage(
   includeCSS("../www/slate.min.css"),
@@ -125,6 +178,16 @@ shinyUI(fluidPage(
         condition = "input.tabs1 == 'Scatter'",
         selectInput("xVar", "X:", choices=c("DBH", "BA", "BV", "HT", "HTOBS")),
         selectInput("yVar", "Y:", choices=c("HT", "HTOBS", "DBH", "BA", "BV")),
+        checkboxInput("scale", "Scale Variables"),
+        conditionalPanel(
+          condition = "input.scale == true",
+          checkboxInput("center", "Center", value = TRUE)
+          ),
+        checkboxInput("kmeans", "Kmeans"),
+        conditionalPanel(
+          condition = "input.kmeans == true",
+          textInput("numK", "K", value=5)
+          ),
         checkboxInput("color", "Color"),
         checkboxInput("size", "Size"),
         checkboxInput("shape", "Shape"),
@@ -172,11 +235,14 @@ shinyUI(fluidPage(
                     choices=c("ELEV", "HT", "HTOBS", "BV", "BA", "DBH")),
         selectInput("xVar3d", "X:",
                     choices=c("BA", "HT", "HTOBS", "BV", "ELEV", "DBH")),
-        checkboxInput("split3d", "Split"),
         conditionalPanel(
-          condition = "input.split3d == true",
-          selectInput("split3dBy", "Split By:",
-                      choices=c("ELEVCL", "ASPCL", "SPEC"))
+          condition = "input.package3d == 'lattice'",
+          checkboxInput("split3d", "Split"),
+          conditionalPanel(
+            condition = "input.split3d == true",
+            selectInput("split3dBy", "Split By:",
+                        choices=c("ELEVCL", "ASPCL", "SPEC"))
+            )
           )
         ),
       
@@ -184,7 +250,44 @@ shinyUI(fluidPage(
       conditionalPanel(
         helpText("NOTE: We only have position data for high high (HH) plots."),
         condition = "input.tabs1 == 'Position'",
-        checkboxInput("posPoints", "Points")
+        checkboxInput("cartesian", "Cartesian"),
+        conditionalPanel(
+          condition = "input.cartesian == true",
+          checkboxInput("jitter", "Jitter"),
+          checkboxInput("kmeansPos", "Kmeans"),
+          conditionalPanel(
+            condition = "input.kmeansPos == true",
+            checkboxInput("scalePos", "Scale first", TRUE),
+            checkboxGroupInput("kmeansVars", "Cluster By:",
+                               choices=c("BA","BV", "DBH","HT","HTOBS","X","Y"),
+                               selected=c("BA", "HT")),
+            textInput("kPos", "Number of clusters:", value=5)
+            ),
+          checkboxInput("pointsByYear", "Split Years"),
+          conditionalPanel(
+            condition = "input.allPlots != true",
+            checkboxInput("addTRAD", "Tree Radius"),
+            checkboxInput("addABSRAD", "ABBA Radius")
+            ),
+          checkboxInput("colorPoints", "Color"),
+          conditionalPanel(
+            condition = "input.colorPoints == true",
+            selectInput("colorPointsBy", "Color:",
+                        choices=c("SPEC", "YEAR", "STAT", "CANHT"))
+            ),
+          checkboxInput("shapePoints", "Shape"),
+          conditionalPanel(
+            condition = "input.shapePoints == true",
+            selectInput("shapePointsBy", "Shape:",
+                        choices=c("SPEC", "YEAR", "STAT"))
+            ),
+          checkboxInput("sizePoints", "Size"),
+          conditionalPanel(
+            condition = "input.sizePoints == true",
+            selectInput("sizePointsBy", "Size:",
+                        choices=c("BA", "DBH", "BV", "HT", "HTOBS", "CANHT"))
+            )
+          )
         )
     ),
   

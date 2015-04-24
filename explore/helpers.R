@@ -3,7 +3,7 @@
 ## Description: helper functions
 ## Author: Noah Peart
 ## Created: Tue Apr 21 20:36:38 2015 (-0400)
-## Last-Updated: Wed Apr 22 02:23:01 2015 (-0400)
+## Last-Updated: Fri Apr 24 15:13:05 2015 (-0400)
 ##           By: Noah Peart
 ######################################################################
 
@@ -22,3 +22,13 @@ pol2cart <- function(r, theta, deg = FALSE, recycle = FALSE) {
     colnames(out) <- c("x", "y")
     return( out )
 }
+
+## circle
+circ <- function(radii, yrs) {
+    rads <- seq(0, 2*pi, length=40)
+    res <- do.call(rbind, lapply(radii, function(r)
+        data.frame(X=r*cos(rads), Y=r*sin(rads))))
+    res$YEAR <- factor(rep(yrs, each=40))
+    return ( res )
+}
+
