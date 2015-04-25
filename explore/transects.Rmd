@@ -16,7 +16,7 @@ knitr::opts_chunk$set(fig.path="./Figs", echo=FALSE, warning=FALSE,
                       message=FALSE, dev='svg')
 ```
 ```{r styling}
-selectInput("style", "Page Styling (not working):", 
+selectInput("style", "Page Styling (not working -- needs to be changed manually):", 
             choices=c("darkly", "cyborg", "cosmo", "cerulean", 
                       "flatly", "journal", "slate", "superhero",
                       "spacelab", "readable", "sandstone"))
@@ -28,10 +28,58 @@ stylesheet <- reactive({
 # Info
 * [code](https://github.com/ghandi9000/transects)
 
+# Setup
+__TODO__ Choose growth period to look at here.  
 ```{r setup, cache=FALSE}
 source("setup.R")
 source("helpers.R")
 
+summTran <- reactive({
+  #   samps[samps$TRAN == input$summTran, ]
+  if (input$allTrans | input$byYear) tp
+  else tp[tp$TRAN == input$summTran, ]  
+})
+
+summTable <- renderTable({
+  dat <- summTran()
+  dat <- dat[!is.na(dat[,input$summVar]), ]
+  if (input$byYear) {
+    dat <- dat[dat$YEAR == as.numeric(input$summYear), ]
+    tab <- table(dat$TPLOT, dat$TRAN)
+  } else {
+    tab <- table(dat$TPLOT, dat$YEAR)
+    tab <- tab[, c("87", "98", "99", "10", "11")]
+  }
+  if (!input$transpose) t(tab)
+  else tab
+  })
+
+shinyUI(
+  fluidPage(
+    includeCSS("../www/slate.min.css"),
+    headerPanel("Transect Summaries"),
+    sidebarPanel(
+      helpText("Tables display counts of summary variable."),
+      #       selectInput("summYear", "Year:", choices=c(87, 98, 99, 10, 11)),
+      selectInput("summTran", "Transect:", choices=sort(unique(as.character(tp$TRAN)))),
+      selectInput("summVar", "Summary Variable:", choices=c("DBH","HT","HTOBS")),
+      checkboxInput("byYear", "Summary by Year"),
+      conditionalPanel(
+        condition = "input.byYear == true",
+        selectInput("summYear", "Year:", choices=c(87,98,99,10,11))
+        ),
+      checkboxInput("transpose", "Transpose"),
+      checkboxInput("allTrans", "All Transects")
+      ),
+    mainPanel(
+      summTable
+      )
+    ))
+
+```
+
+
+```{r exploratory, cache=FALSE}
 observe({
   input$tabs1
   if (input$tabs1 == "Scatter 3D")
@@ -115,6 +163,16 @@ scatter3d <- renderPlot({
     }
 })
 
+posCl <- reactive({
+  data <- getData()
+  data <- data[!is.na(data$HR) & !is.na(data$DIST),]  
+  k <- as.numeric(input$kPos)
+  vars <- input$kmeansVars
+  if (input$scalePos)
+    data[,vars] <- scale(data[,vars])
+  kmeans(data[complete.cases(data[,vars]),vars], centers = k)
+})
+
 position <- renderPlot({
   require(plotrix)
   color <- ifelse(input$colorPoints, input$colorPointsBy, "NULL")
@@ -124,13 +182,11 @@ position <- renderPlot({
   data <- data[!is.na(data$HR) & !is.na(data$DIST),]
   
   if (input$kmeansPos) {
-    k <- as.numeric(input$kPos)
+    cl <- posCl()
+#     vars <- attr(cl$centers, "dimnames")[[2]]
     vars <- input$kmeansVars
-    if (input$scalePos)
-      data[,vars] <- scale(data[,vars])
-    cl <- kmeans(na.omit(data[,vars]), centers = k)
-    data[complete.cases(data[,vars]), "cluster"] = factor(cl$cluster)
-    color = "cluster"
+    data[complete.cases(data[,vars]), "cluster"] <- factor(cl$cluster)
+    color <- "cluster"
   }
   
   if (input$cartesian) {
@@ -155,6 +211,12 @@ position <- renderPlot({
       ps <- circ(rs[["ABSRAD"]], rs[["YEAR"]])
       p1 <- p1 + geom_path(data=ps, aes(X, Y, color=YEAR, lty=YEAR))
     }
+    if (input$kmeansPos && input$kmeansLegend) {
+      text <- apply(cl$centers, 1, function(r) paste(round(as.numeric(r),2), collapse=":"))
+      name = paste(colnames(cl$centers), collapse=":")
+      p1 <- p1 + scale_colour_discrete(name=name, breaks=attr(cl$centers, "dimnames")[[1]],
+                                     labels=text)
+      }
     print (p1)
   } else {
     polar.plot(data$DIST, polar.pos=(data$HR%%12)/max(data$HR) * 360, 
@@ -165,7 +227,6 @@ position <- renderPlot({
   })
 
 shinyUI(fluidPage(
-  includeCSS("../www/slate.min.css"),
   headerPanel("Exploratory Graphics"),
   sidebarPanel(
       selectInput("tran", "Transect:", 
@@ -186,7 +247,7 @@ shinyUI(fluidPage(
         checkboxInput("kmeans", "Kmeans"),
         conditionalPanel(
           condition = "input.kmeans == true",
-          textInput("numK", "K", value=5)
+          textInput("numK", "#Clusters", value=5)
           ),
         checkboxInput("color", "Color"),
         checkboxInput("size", "Size"),
@@ -261,7 +322,8 @@ shinyUI(fluidPage(
             checkboxGroupInput("kmeansVars", "Cluster By:",
                                choices=c("BA","BV", "DBH","HT","HTOBS","X","Y"),
                                selected=c("BA", "HT")),
-            textInput("kPos", "Number of clusters:", value=5)
+            textInput("kPos", "#Clusters:", value=5),
+            checkboxInput("kmeansLegend", "Show K-means values")
             ),
           checkboxInput("pointsByYear", "Split Years"),
           conditionalPanel(

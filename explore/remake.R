@@ -4,9 +4,10 @@
 ## Author: Noah Peart
 ## Created: Mon Apr 13 20:07:47 2015 (-0400)
 R
-## Last-Updated: Fri Apr 24 13:04:46 2015 (-0400)
+## Last-Updated: Fri Apr 24 20:39:22 2015 (-0400)
 ##           By: Noah Peart
 ######################################################################
+source("helpers.R")
 require(plyr)
 require(dplyr)
 
@@ -24,10 +25,6 @@ if (file.exists("temp/transect.csv")) {
 ##
 ################################################################################
 ## tidy, wide -> long
-grepInOrder <- function(coln, yrs, dat) {
-    unlist(sapply(paste0(coln, yrs), function(x) grep(x, names(dat))))
-}
-
 yrs <- c(87, 98, 99, 10, 11)
 cols <- grep("canht|^STAT|^DBH|^HT[[:digit:]]|^ht[[:digit:]]+|^bv|TRAN|TPLOT|TAG|SPEC|ASP|ELEV|DIST|^HR$|TRAD|ABSRAD", names(tp))
 dat <- tp[, cols]
@@ -37,6 +34,16 @@ dat[, paste0("HT", c(87, 98, 10))] <- rep(NA, nrow(dat))
 dat <- rename(dat, ABSRAD99=ABSRAD, TRAD99=TRAD)
 dat[, paste0("ABSRAD", c(87, 98, 10))] <- NA
 dat[, paste0("TRAD", c(87, 98, 10))] <- NA
+
+## Growth columns
+## 87, 98 => no S transects, no HH of LL elevations
+dat[, paste0("BA",yrs)] <- 0.00007854 * dat[,paste0("DBH", yrs)]**2
+## vars <- c("DBH", "ht", "bv", "canht", "HTTCR", "BA")
+## for (v in vars) {
+##     dat[,paste0("g_", v, 86)] <- (dat[,paste0(v, 98)] - dat[,paste0(v, 86)])/12
+##     dat[,paste0("g_", v, 87)] <- (dat[,paste0(v, 98)] - dat[,paste0(v, 87)])/11
+##     dat[,paste0("g_", v, 98)] <- (dat[,paste0(v, 10)] - dat[,paste0(v, 98)])/12
+## }
 
 dat <- reshape(dat, times = yrs, direction = "long",
                varying = list(
@@ -54,12 +61,13 @@ dat$YEAR <- factor(dat$YEAR)
 
 tp <- dat[!is.na(dat$DBH) | !is.na(dat$HT) | !is.na(dat$HTOBS), ]
 tp$BA <- 0.00007854*tp$DBH*tp$DBH
-table(tp$x)
 
 ## Polar -> cartesian
 coords <- pol2cart(tp$DIST, (tp$HR%%12)/12 * 2*pi + pi/2)
 tp$X <- -coords[,1]
 tp$Y <- coords[,2]
+
+
 
 ## Save
 saveRDS(tp, "../temp/tp.rds")

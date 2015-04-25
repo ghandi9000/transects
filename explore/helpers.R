@@ -3,9 +3,14 @@
 ## Description: helper functions
 ## Author: Noah Peart
 ## Created: Tue Apr 21 20:36:38 2015 (-0400)
-## Last-Updated: Fri Apr 24 15:13:05 2015 (-0400)
+## Last-Updated: Fri Apr 24 18:45:06 2015 (-0400)
 ##           By: Noah Peart
 ######################################################################
+
+## grep indices ordered by year
+grepInOrder <- function(coln, yrs, dat) {
+    unlist(sapply(paste0(coln, yrs), function(x) grep(x, names(dat))))
+}
 
 ## Polar to cartesian
 ## deg: if input theta is in degrees
