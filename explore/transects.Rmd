@@ -26,7 +26,7 @@ stylesheet <- reactive({
 ```
 
 # Info
-* [code](https://github.com/ghandi9000/transects)
+* [code](https://github.com/nverno/transects)
 
 # Setup
 __TODO__ Choose growth period to look at here.  
