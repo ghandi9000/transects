@@ -21,7 +21,7 @@ knitr::opts_chunk$set(fig.path="./Figs", echo=FALSE, warning=FALSE,
 -------
 
 # Info
-* [code](https://github.com/ghandi9000/hoods)
+* [code](https://github.com/nverno/hoods)
 
 -------
 
